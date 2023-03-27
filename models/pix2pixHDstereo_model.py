@@ -6,7 +6,7 @@ from util.image_pool import ImagePool
 from .base_model import BaseModel
 from . import networks
 
-class Pix2PixHPix2PixHDStereoModelDModel(BaseModel):
+class Pix2PixHDStereoModel(BaseModel):
     def name(self):
         return 'Pix2PixHDStereoModel'
     
@@ -21,16 +21,13 @@ class Pix2PixHPix2PixHDStereoModelDModel(BaseModel):
         if opt.resize_or_crop != 'none' or not opt.isTrain: # when training at full res this causes OOM
             torch.backends.cudnn.benchmark = True
         self.isTrain = opt.isTrain
-        self.use_features = opt.instance_feat or opt.label_feat
         self.gen_features = self.use_features and not self.opt.load_features
         input_nc = opt.input_nc # should be 4
         assert(input_nc == 4)
 
         ##### define networks        
         # Generator network
-        netG_input_nc = input_nc        
-        if self.use_features:
-            netG_input_nc += opt.feat_num                  
+        netG_input_nc = input_nc                       
         self.netG = networks.define_G(netG_input_nc, opt.output_nc, opt.ngf, opt.netG, 
                                       opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers, 
                                       opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids)        
@@ -105,35 +102,6 @@ class Pix2PixHPix2PixHDStereoModelDModel(BaseModel):
             params = list(self.netD.parameters())    
             self.optimizer_D = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
-
-    def concatenate_rgb_depth(rgb_image, depth_image_np):
-        """
-        Concatenate an RGB image and a depth image.
-        
-        Args:
-            rgb_image (torch.Tensor): A PyTorch tensor of shape [batch_size, 3, height, width]
-            depth_image_np (np.array): A numpy array of shape [height_small, width_small] with dtype float32
-                                    and values in a negative and positive range
-
-        Returns:
-            torch.Tensor: A concatenated image tensor of shape [batch_size, 4, height, width]
-        """
-
-        # Normalize depth image to [0, 1]
-        depth_image_np = (depth_image_np - depth_image_np.min()) / (depth_image_np.max() - depth_image_np.min())
-
-        # Resize depth image to match the spatial dimensions of the RGB image
-        rgb_image_np = rgb_image.permute(0, 2, 3, 1).numpy()  # Convert the RGB image tensor to a numpy array of shape [batch_size, height, width, 3]
-        batch_size, height, width, _ = rgb_image_np.shape
-        depth_image_resized = cv2.resize(depth_image_np, (width, height))  # Resize the depth image
-
-        # Convert the resized depth image to a PyTorch tensor and add a channel dimension
-        depth_image_resized = torch.from_numpy(depth_image_resized).unsqueeze(0).unsqueeze(1)  # Shape: [batch_size, 1, height, width]
-
-        # Concatenate the RGB image and resized depth image
-        concatenated_image = torch.cat((rgb_image, depth_image_resized), dim=1)  # Shape: [batch_size, 4, height, width]
-
-        return concatenated_image
 
     def discriminate(self, concatenated_input, test_image, use_pool=False):
         input_concat = torch.cat((concatenated_input, test_image.detach()), dim=1)
